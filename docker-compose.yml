@@ -1,0 +1,59 @@
+services:
+  musicbot:
+    build: .
+    image: discord-music-bot:latest
+    container_name: discord-music-bot
+    restart: unless-stopped
+    ports:
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8080}:8080"
+    environment:
+      # All of these are optional: everything can be configured in the dashboard.
+      # Values here only pre-fill empty settings on first start.
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      DISCORD_TOKEN: ${DISCORD_TOKEN:-}
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      POT_PROVIDER_URL: http://bgutil-provider:4416
+      LOGIN_BROWSER_HOST: youtube-login
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - bot-data:/data
+      - login-profile:/login-profile:ro
+    networks:
+      - default
+      - login
+    depends_on:
+      - bgutil-provider
+      - youtube-login
+
+  # Generates YouTube "proof of origin" tokens so YouTube doesn't flag the bot as automated.
+  bgutil-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    container_name: bgutil-provider
+    restart: unless-stopped
+    init: true
+
+  # "Sign in to YouTube": a Chromium browser you sign in with from the dashboard (Settings → YouTube).
+  # It has no published ports; the dashboard proxies it behind its own sign-in. Optional: remove this service
+  # (and LOGIN_BROWSER_HOST above) to paste cookies manually instead.
+  youtube-login:
+    build: ./login-browser
+    image: discord-music-bot-login:latest
+    container_name: youtube-login
+    restart: unless-stopped
+    volumes:
+      - login-profile:/profile
+    networks:
+      - login
+
+volumes:
+  bot-data:
+  login-profile:
+
+networks:
+  default:
+  # Only the bot and the sign-in browser are on this network, so no other container can watch the sign-in.
+  login:
