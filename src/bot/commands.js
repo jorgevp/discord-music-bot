@@ -80,7 +80,7 @@ async function play(ctx, { next = false } = {}) {
     throw new UserError(`I'm already playing in <#${player.voiceChannelId}>. Join me there!`);
   }
   if (next) checkControl(ctx, player);
-  player.textChannelId = ctx.message.channelId;
+  player.setTextChannel(ctx.message.channelId);
   ctx.message.channel.sendTyping().catch(() => {});
 
   // Resolve the link and join voice in parallel; if resolving fails the idle timer makes the bot leave again.
@@ -164,7 +164,7 @@ const COMMANDS = [
       if (!voice) throw new UserError('Join a voice channel first.');
       const player = players.obtain(ctx.guild);
       if (player.connected && player.current && player.voiceChannelId !== voice.id) checkControl(ctx, player);
-      player.textChannelId = ctx.message.channelId;
+      player.setTextChannel(ctx.message.channelId);
       await player.connect(voice);
       player.ensurePlaying();
       await ctx.reply({ embeds: [simpleEmbed(`🔊 Joined <#${voice.id}>.`)] });
@@ -311,7 +311,7 @@ export async function handleMessage(message) {
     if (command.control) {
       player = requirePlayer(ctx);
       checkControl(ctx, player);
-      player.textChannelId = message.channelId;
+      player.setTextChannel(message.channelId);
     }
     await command.run(ctx, player);
   } catch (err) {

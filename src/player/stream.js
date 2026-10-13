@@ -10,6 +10,17 @@ const FFMPEG_BIN = process.env.FFMPEG_PATH || 'ffmpeg';
 // HTTP connection idle long enough for the media server to drop it mid-song.
 const READ_AHEAD_BYTES = 8 * 1024 * 1024;
 const DETACH = process.platform !== 'win32';
+// SoX resampler at its highest precision, converting to 16-bit stereo with triangular dither in a single step.
+const RESAMPLE_FILTER = 'aresample=48000:resampler=soxr:precision=28:osf=s16:dither_method=triangular';
+
+// libopus encoder requests (opus_defines.h).
+const OPUS_SET_BITRATE = 4002;
+const OPUS_SET_COMPLEXITY = 4010;
+const OPUS_SET_SIGNAL = 4024;
+const OPUS_SIGNAL_MUSIC = 3002;
+// Discord's highest voice-channel bitrate. Voice servers relay the bot's packets without re-encoding them, so
+// listeners get exactly this. Left alone, libopus picks ~96 kbps (and prism-media's setBitrate caps at 128 kbps).
+const OPUS_BITRATE = 384_000;
 
 function watch(child) {
   let stderr = '';
@@ -29,6 +40,25 @@ function watch(child) {
     child.once('exit', (code) => setTimeout(() => finish(code, null), 1000).unref());
   });
   return { result, exited };
+}
+
+/**
+ * Sets the Opus encoder @discordjs/voice created for a PCM resource to music mode at the highest bitrate.
+ * Returns false if the encoder couldn't be tuned (playback still works, at libopus's defaults).
+ */
+export function tuneOpusEncoder(resource) {
+  const opus = resource.encoder?.encoder;
+  // @discordjs/opus calls it applyEncoderCTL, opusscript encoderCTL.
+  const ctl = opus?.applyEncoderCTL ?? opus?.encoderCTL;
+  if (!ctl) return false;
+  try {
+    ctl.call(opus, OPUS_SET_BITRATE, OPUS_BITRATE);
+    ctl.call(opus, OPUS_SET_COMPLEXITY, 10);
+    ctl.call(opus, OPUS_SET_SIGNAL, OPUS_SIGNAL_MUSIC);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function killTree(child) {
@@ -64,8 +94,9 @@ export function createAudioStream(url, { seek = 0, normalize = false } = {}) {
   ];
   const ffmpegArgs = ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0'];
   if (seek > 0) ffmpegArgs.push('-ss', seek.toFixed(3));
-  if (normalize) ffmpegArgs.push('-af', 'loudnorm=I=-16:TP=-1.5:LRA=11');
-  ffmpegArgs.push('-vn', '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1');
+  // loudnorm works (and outputs) at 192 kHz, so the resampler always runs last.
+  const filters = normalize ? ['loudnorm=I=-16:TP=-1.5:LRA=11', RESAMPLE_FILTER] : [RESAMPLE_FILTER];
+  ffmpegArgs.push('-af', filters.join(','), '-vn', '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1');
 
   // When piping fragmented formats (HLS/DASH) to stdout, yt-dlp stages each fragment as a file in its working
   // directory, so every stream gets a private, writable one.

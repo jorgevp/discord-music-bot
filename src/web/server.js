@@ -458,7 +458,7 @@ export function startWebServer() {
     const channelId = req.body?.channelId ? String(req.body.channelId) : null;
     if (channelId && !guild.channels.cache.get(channelId)?.isTextBased()) throw new UserError('Pick a text channel.');
     const player = players.obtain(guild);
-    player.textChannelId = channelId;
+    player.setTextChannel(channelId);
     player.emitUpdate();
     res.json(player.toJSON());
   });

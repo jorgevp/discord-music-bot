@@ -16,7 +16,7 @@ import { createLogger } from '../logger.js';
 import { resolvePlayable } from '../sources/matcher.js';
 import { hydrateTrack } from '../sources/resolver.js';
 import { UserError, formatDuration, shuffleInPlace, sleep } from '../util.js';
-import { createAudioStream } from './stream.js';
+import { createAudioStream, tuneOpusEncoder } from './stream.js';
 import { cloneTrack, serializeTrack } from './track.js';
 
 const HISTORY_LIMIT = 50;
@@ -41,7 +41,7 @@ export class GuildPlayer extends EventEmitter {
     this.current = null;
     this.loop = 'off';
     this.volume = config.get().playback.defaultVolume;
-    this.textChannelId = null;
+    this.textChannelId = config.guild(guild.id).textChannelId || null;
 
     this.connection = null;
     this.resource = null;
@@ -378,6 +378,12 @@ export class GuildPlayer extends EventEmitter {
     return volume;
   }
 
+  /** Where "Now playing" and other messages are posted (null = nowhere). Remembered across restarts. */
+  setTextChannel(channelId) {
+    this.textChannelId = channelId || null;
+    config.updateGuild(this.guildId, { textChannelId: this.textChannelId ?? '' });
+  }
+
   setLoop(mode) {
     if (!LOOP_MODES.includes(mode)) throw new UserError(`Loop mode must be one of: ${LOOP_MODES.join(', ')}.`);
     this.loop = mode;
@@ -455,6 +461,7 @@ export class GuildPlayer extends EventEmitter {
         metadata: track,
       });
       resource.volume.setVolumeLogarithmic(this.volume / 100);
+      if (!tuneOpusEncoder(resource)) this.log.warn('Could not raise the Opus bitrate; playing at the encoder defaults.');
       this.stream = stream;
       this.resource = resource;
       this.seekOffset = seekMs;

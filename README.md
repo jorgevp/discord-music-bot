@@ -180,4 +180,4 @@ Dockerfile              Node 24 + ffmpeg + yt-dlp (with its JS challenge solver)
 docker-compose.yml      bot + bgutil PO-token provider + sign-in browser
 ```
 
-Audio path: `yt-dlp` → 8 MB read-ahead buffer → `ffmpeg` (48 kHz PCM, optional loudnorm) → inline volume → Opus → `@discordjs/voice`, which handles Discord's DAVE end-to-end encryption.
+Audio path: `yt-dlp` (best audio format, Opus preferred) → 8 MB read-ahead buffer → `ffmpeg` (optional loudnorm, SoX-resampled to 48 kHz dithered PCM) → inline volume → Opus at 384 kbps (Discord's maximum) → `@discordjs/voice`, which handles Discord's DAVE end-to-end encryption.

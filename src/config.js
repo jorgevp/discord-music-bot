@@ -48,6 +48,12 @@ const DEFAULTS = {
     sessionSecret: '',
     publicUrl: '',
   },
+  // Per-server state keyed by guild ID (not dashboard settings); each entry has the shape of GUILD_DEFAULTS.
+  guilds: {},
+};
+
+const GUILD_DEFAULTS = {
+  textChannelId: '',
 };
 
 /**
@@ -180,6 +186,16 @@ function mergeDeep(target, source) {
   return target;
 }
 
+/** mergeDeep only keeps keys the defaults already have, so per-server entries are merged one by one. */
+function mergeGuilds(stored) {
+  const guilds = {};
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return guilds;
+  for (const [guildId, state] of Object.entries(stored)) {
+    if (/^\d{17,20}$/.test(guildId)) guilds[guildId] = mergeDeep(structuredClone(GUILD_DEFAULTS), state);
+  }
+  return guilds;
+}
+
 const sameValue = (a, b) =>
   a === b || (typeof a === 'object' && typeof b === 'object' && JSON.stringify(a) === JSON.stringify(b));
 
@@ -202,6 +218,7 @@ class ConfigStore extends EventEmitter {
       }
     }
     this.data = mergeDeep(structuredClone(DEFAULTS), stored);
+    this.data.guilds = mergeGuilds(stored.guilds);
     await this.#applyEnvironmentSeeds();
     if (!this.data.web.sessionSecret) this.data.web.sessionSecret = crypto.randomBytes(32).toString('hex');
     this.save();
@@ -267,6 +284,20 @@ class ConfigStore extends EventEmitter {
       this.emit('change', changed);
     }
     return changed;
+  }
+
+  /** Stored state for one server, e.g. where to post announcements. */
+  guild(guildId) {
+    return this.data.guilds[guildId] ?? structuredClone(GUILD_DEFAULTS);
+  }
+
+  /** Merges { key: value } into a server's stored state and persists it if anything changed. */
+  updateGuild(guildId, changes) {
+    const current = this.guild(guildId);
+    const next = { ...current, ...changes };
+    if (sameValue(current, next)) return;
+    this.data.guilds[guildId] = next;
+    this.save();
   }
 
   save() {
